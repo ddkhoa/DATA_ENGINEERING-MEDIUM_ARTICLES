@@ -1,0 +1,23 @@
+{
+  "name": "data_engineering-medium",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ddkhoa/DATA_ENGINEERING-MEDIUM_ARTICLES.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/ddkhoa/DATA_ENGINEERING-MEDIUM_ARTICLES/issues"
+  },
+  "homepage": "https://github.com/ddkhoa/DATA_ENGINEERING-MEDIUM_ARTICLES#readme",
+  "dependencies": {
+    "jssoup": "^0.0.15",
+    "node-html-parser": "^6.1.4"
+  }
+}
