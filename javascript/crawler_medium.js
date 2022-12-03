@@ -1,4 +1,7 @@
 const { parse } = require("node-html-parser")
+const { stringify } = require("csv-stringify")
+const { parse: csvParser } = require("csv-parse");
+const fs = require("fs")
 
 function getLastElementOfArray(arr) {
     return arr[arr.length - 1]
@@ -21,11 +24,57 @@ async function getMediumArticleDatadump(url) {
         const prefix = "window.__APOLLO_STATE__ ="
         const articleDataString = dataElement.text.substring(prefix.length)
         const articleDataObj = JSON.parse(articleDataString)
-        return { "datadump": articleDataObj, id: id }
+        return { id: id, "datadump": articleDataObj, }
 
     } catch {
-        return { "datadump": null, id: id }
+        return { id: id, "datadump": null }
     }
+}
+
+async function isFileExist(filename) {
+    return new Promise((resolve, reject) => {
+        fs.stat(filename, (error, _) => {
+            if (error) {
+                return resolve(false)
+            }
+            return resolve(true)
+        })
+    })
+}
+
+function writeToCSV(dataSet, filename, columns) {
+
+    return new Promise((resolve, reject) => {
+        isFileExist(filename).then(fileExist => {
+            const writeStream = fs.createWriteStream(filename, { flags: "a" })
+            writeStream.on('finish', () => {
+                console.log(`Write to ${dataSet.length} lines to file ${filename} successfully!`)
+                resolve()
+            })
+            const stringifier = stringify({ header: !fileExist, columns: columns })
+            stringifier.pipe(writeStream)
+            dataSet.forEach(row => {
+                stringifier.write(row)
+            })
+            stringifier.end()
+        })
+    })
+}
+
+async function readFromCSV(filename) {
+
+    return new Promise((resolve, reject) => {
+        let rows = []
+        fs.createReadStream(filename)
+            .pipe(csvParser({ delimiter: ",", from_line: 1, columns: true }))
+            .on("data", function (row) {
+                rows.push(row);
+            })
+            .on("end", function () {
+                resolve(rows)
+            })
+    })
+
 }
 
 function getDefaultPostData(id) {
@@ -58,9 +107,10 @@ function getDefaultPostData(id) {
 }
 
 function extractDataFromDatadump({ id, datadump }) {
-
+    if (typeof (datadump) == "string") {
+        datadump = JSON.parse(datadump)
+    }
     const postKey = `Post:${id}`
-    console.log(datadump)
     if (!datadump || !(postKey in datadump)) {
         return getDefaultPostData(id)
     }
@@ -123,7 +173,7 @@ function extractDataFromDatadump({ id, datadump }) {
         if ("geolocation" in creatorInfo) {
             postData["creator_country"] = creatorInfo["geolocation"]["country"]
         } else {
-            postData["creator_country"] = None
+            postData["creator_country"] = null
         }
 
         return postData
@@ -134,8 +184,13 @@ function extractDataFromDatadump({ id, datadump }) {
 }
 
 async function main() {
-    const articleDataDump = await getMediumArticleDatadump("https://medium.com/@ddkhoa.blogging/being-a-junior-developer-taught-me-the-important-life-lesson-8ad73582d912")
-    const articleDataFilterred = extractDataFromDatadump(articleDataDump)
+    const urlSet = [
+        "https://medium.com/@ddkhoa.blogging/being-a-junior-developer-taught-me-the-important-life-lesson-8ad73582d912"
+    ]
+    const articleDatadumpSet = await Promise.all(urlSet.map(item => getMediumArticleDatadump(item)))
+    await writeToCSV(articleDatadumpSet, "dataset/articles.csv", columns = ["id", "datadump"])
+    const articleData = await readFromCSV("dataset/articles.csv")
+    const articleDataFilterred = articleData.map(item => extractDataFromDatadump(item))
     console.log(articleDataFilterred)
 }
 
