@@ -1,11 +1,11 @@
 const { parse } = require("node-html-parser")
-const { stringify } = require("csv-stringify")
-const { parse: csvParser } = require("csv-parse");
-const fs = require("fs")
+const { XMLParser } = require("fast-xml-parser");
+const { readFromCSV, writeToCSV, generateDateRange, formatDate } = require("./helper");
 
 function getLastElementOfArray(arr) {
     return arr[arr.length - 1]
 }
+
 async function getMediumArticleDatadump(url) {
 
     const id = getLastElementOfArray(url.split("-"))
@@ -29,52 +29,6 @@ async function getMediumArticleDatadump(url) {
     } catch {
         return { id: id, "datadump": null }
     }
-}
-
-async function isFileExist(filename) {
-    return new Promise((resolve, reject) => {
-        fs.stat(filename, (error, _) => {
-            if (error) {
-                return resolve(false)
-            }
-            return resolve(true)
-        })
-    })
-}
-
-function writeToCSV(dataSet, filename, columns) {
-
-    return new Promise((resolve, reject) => {
-        isFileExist(filename).then(fileExist => {
-            const writeStream = fs.createWriteStream(filename, { flags: "a" })
-            writeStream.on('finish', () => {
-                console.log(`Write to ${dataSet.length} lines to file ${filename} successfully!`)
-                resolve()
-            })
-            const stringifier = stringify({ header: !fileExist, columns: columns })
-            stringifier.pipe(writeStream)
-            dataSet.forEach(row => {
-                stringifier.write(row)
-            })
-            stringifier.end()
-        })
-    })
-}
-
-async function readFromCSV(filename) {
-
-    return new Promise((resolve, reject) => {
-        let rows = []
-        fs.createReadStream(filename)
-            .pipe(csvParser({ delimiter: ",", from_line: 1, columns: true }))
-            .on("data", function (row) {
-                rows.push(row);
-            })
-            .on("end", function () {
-                resolve(rows)
-            })
-    })
-
 }
 
 function getDefaultPostData(id) {
@@ -183,15 +137,48 @@ function extractDataFromDatadump({ id, datadump }) {
     }
 }
 
-async function main() {
-    const urlSet = [
-        "https://medium.com/@ddkhoa.blogging/being-a-junior-developer-taught-me-the-important-life-lesson-8ad73582d912"
-    ]
-    const articleDatadumpSet = await Promise.all(urlSet.map(item => getMediumArticleDatadump(item)))
-    await writeToCSV(articleDatadumpSet, "dataset/articles.csv", columns = ["id", "datadump"])
-    const articleData = await readFromCSV("dataset/articles.csv")
-    const articleDataFilterred = articleData.map(item => extractDataFromDatadump(item))
-    console.log(articleDataFilterred)
+async function getArticlesUrlFromSitemapByDateRange(startDate, endDate) {
+
+    const dateRange = generateDateRange(startDate, endDate)
+    const articlesUrl = await Promise.all(
+        dateRange.map(async date => await getArticlesUrlFromSitemapByDate(date))
+    )
+    const articlesUniqueUrls = [... new Set(articlesUrl.flat())]
+    console.debug(`Get ${articlesUniqueUrls.length} urls from medium site map from ${formatDate(startDate)} to ${formatDate(endDate)}`)
+    await writeToCSV(articlesUniqueUrls, "dataset/articles_url.csv", columns = ["url"])
 }
 
-main()
+async function getArticlesUrlFromSitemapByDate(date) {
+    const year = date.getFullYear()
+    const month = date.getMonth() + 1
+    const dateInMonth = date.getDate()
+    const monthPadded = month.toString().padStart(2, '0')
+    const dateInMonthPadded = dateInMonth.toString().padStart(2, '0')
+
+    const sitemapUrl = `https://medium.com/sitemap/posts/${year}/posts-${year}-${monthPadded}-${dateInMonthPadded}.xml`
+
+    const response = await fetch(sitemapUrl)
+    const responseText = await response.text()
+
+    const parser = new XMLParser();
+    const dataParsed = parser.parse(responseText);
+    const articlesUrl = dataParsed.urlset.url.filter(item => item.priority >= 0.5).map(item => ({ url: item.loc }))
+
+    console.debug(`Get ${articlesUrl.length} urls from medium site map on ${formatDate(date)}`)
+    return articlesUrl
+}
+
+async function main() {
+    const urls = [
+        "https://medium.com/@ddkhoa.blogging/being-a-junior-developer-taught-me-the-important-life-lesson-8ad73582d912"
+    ]
+    const articlesDatadump = await Promise.all(urls.map(item => getMediumArticleDatadump(item)))
+    await writeToCSV(articlesDatadump, "dataset/articles_datadump.csv", columns = ["id", "datadump"])
+    const articlesData = await readFromCSV("dataset/articles_datadump.csv")
+    const articlesDataParsed = articlesData.map(item => extractDataFromDatadump(item))
+    await writeToCSV(articlesDataParsed, "dataset/articles_dataparsed.csv", columns = Object.keys(getDefaultPostData("1")))
+}
+
+const start = (new Date()).setDate((new Date()).getDate() - 2)
+const end = (new Date()).setDate((new Date()).getDate() - 1)
+getArticlesUrlFromSitemapByDateRange(new Date(start), new Date(end)).then(console.log("OK"))
