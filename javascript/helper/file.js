@@ -19,7 +19,7 @@ function writeToCSV(dataSet, filename, columns) {
         isFileExist(filename).then(fileExist => {
             const writeStream = fs.createWriteStream(filename, { flags: "a" })
             writeStream.on('finish', () => {
-                console.debug(`Write to ${dataSet.length} lines to file ${filename} successfully!`)
+                console.debug(`Write ${dataSet.length} lines to file ${filename} successfully!`)
                 resolve()
             })
             const stringifier = stringify({ header: !fileExist, columns: columns })

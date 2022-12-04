@@ -26,7 +26,8 @@ async function getMediumArticleDatadump(url) {
         const articleDataObj = JSON.parse(articleDataString)
         return { id: id, "datadump": articleDataObj, }
 
-    } catch {
+    } catch (e) {
+        console.log(e)
         return { id: id, "datadump": null }
     }
 }
@@ -34,6 +35,9 @@ async function getMediumArticleDatadump(url) {
 function getDefaultPostData(id) {
     return {
         "id": id,
+        "title": null,
+        "medium_url": null,
+        "tags": null,
         "is_deleted": true,
         "clap_count": null,
         "voter_count": null,
@@ -51,6 +55,7 @@ function getDefaultPostData(id) {
         "collection_slug": null,
         "collection_subscribers": null,
         "creator_id": null,
+        "creator_name": null,
         "creator_follower_count": null,
         "creator_following_count": null,
         "creator_medium_member_at": null,
@@ -73,6 +78,9 @@ function extractDataFromDatadump({ id, datadump }) {
 
         let postData = {
             "id": id,
+            "title": datadump[postKey]["title"],
+            "medium_url": datadump[postKey]["mediumUrl"],
+            "tags": datadump[postKey]["tags"].map(item => item.__ref.split(":")[1]),
             "is_deleted": false,
             "clap_count": datadump[postKey]["clapCount"],
             "voter_count": datadump[postKey]["voterCount"],
@@ -118,6 +126,7 @@ function extractDataFromDatadump({ id, datadump }) {
         const creatorKey = datadump[postKey]["creator"]["__ref"]
         const creatorInfo = datadump[creatorKey]
         postData["creator_id"] = creatorInfo["id"]
+        postData["creator_name"] = creatorInfo["name"]
         postData["creator_follower_count"] = creatorInfo["socialStats"]["followerCount"]
         postData["creator_following_count"] = creatorInfo["socialStats"]["followingCount"]
         postData["creator_medium_member_at"] = creatorInfo["mediumMemberAt"]
@@ -133,6 +142,7 @@ function extractDataFromDatadump({ id, datadump }) {
         return postData
 
     } catch (e) {
+        console.log(e)
         return getDefaultPostData(id)
     }
 }
@@ -146,6 +156,8 @@ async function getArticlesUrlFromSitemapByDateRange(startDate, endDate) {
     const articlesUniqueUrls = [... new Set(articlesUrl.flat())]
     console.debug(`Get ${articlesUniqueUrls.length} urls from medium site map from ${formatDate(startDate)} to ${formatDate(endDate)}`)
     await writeToCSV(articlesUniqueUrls, "dataset/articles_url.csv", columns = ["url"])
+
+    return articlesUniqueUrls.map(item => item.url)
 }
 
 async function getArticlesUrlFromSitemapByDate(date) {
@@ -169,16 +181,22 @@ async function getArticlesUrlFromSitemapByDate(date) {
 }
 
 async function main() {
-    const urls = [
-        "https://medium.com/@ddkhoa.blogging/being-a-junior-developer-taught-me-the-important-life-lesson-8ad73582d912"
-    ]
-    const articlesDatadump = await Promise.all(urls.map(item => getMediumArticleDatadump(item)))
+
+    const start = (new Date()).setDate((new Date()).getDate() - 2)
+    const end = (new Date()).setDate((new Date()).getDate() - 1)
+    const urls = await getArticlesUrlFromSitemapByDateRange(new Date(start), new Date(end))
+
+    const chunkSize = 5
+    let articlesDatadump = []
+    for (let i = 0; i < urls.length; i = i + chunkSize) {
+        console.debug(`Get datadump from ${i} to ${i + chunkSize}`)
+        const urlsChunk = urls.slice(i, i + chunkSize)
+        const articlesDatadumpChunk = await Promise.all(urlsChunk.map(item => getMediumArticleDatadump(item)))
+        articlesDatadump.push(...articlesDatadumpChunk)
+    }
     await writeToCSV(articlesDatadump, "dataset/articles_datadump.csv", columns = ["id", "datadump"])
-    const articlesData = await readFromCSV("dataset/articles_datadump.csv")
-    const articlesDataParsed = articlesData.map(item => extractDataFromDatadump(item))
+    const articlesDataParsed = articlesDatadump.map(item => extractDataFromDatadump(item))
     await writeToCSV(articlesDataParsed, "dataset/articles_dataparsed.csv", columns = Object.keys(getDefaultPostData("1")))
 }
 
-const start = (new Date()).setDate((new Date()).getDate() - 2)
-const end = (new Date()).setDate((new Date()).getDate() - 1)
-getArticlesUrlFromSitemapByDateRange(new Date(start), new Date(end)).then(console.log("OK"))
+main()
